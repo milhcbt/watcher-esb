@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<actions>
+    <action>
+        <actionName>CUSTOM-pack</actionName>
+        <displayName>pack</displayName>
+        <goals>
+            <goal>package</goal>
+        </goals>
+    </action>
+    <action>
+        <actionName>CUSTOM-pack-notest</actionName>
+        <displayName>pack-notest</displayName>
+        <goals>
+            <goal>package</goal>
+            <goal>-Dmaven.test.skip=true</goal>
+        </goals>
+    </action>
+</actions>

@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<blueprint xmlns="http://www.osgi.org/xmlns/blueprint/v1.0.0"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:context="http://www.springframework.org/schema/context"
+           xmlns:cm="http://aries.apache.org/blueprint/xmlns/blueprint-cm/v1.0.0"
+           xmlns:jaxws="http://cxf.apache.org/blueprint/jaxws" xmlns:camel="http://camel.apache.org/schema/blueprint"
+           xsi:schemaLocation="
+	 		http://www.springframework.org/schema/beans 
+	 		http://www.springframework.org/schema/beans/spring-beans.xsd
+      http://www.springframework.org/schema/context 
+      http://www.springframework.org/schema/context/spring-context.xsd
+      http://www.osgi.org/xmlns/blueprint/v1.0.0
+      http://www.osgi.org/xmlns/blueprint/v1.0.0/blueprint.xsd">
+
+
+
+    <bean class="org.apache.commons.dbcp.BasicDataSource" id="watcherDB">
+        <property name="driverClassName" value="com.mysql.jdbc.Driver"/>
+        <!--
+        <property name="serverName" value="localhost"></property>
+        <property name="databaseName" value="watcher"></property>
+        <property name="port" value="3306"></property>
+        -->
+        <property name="url" value="jdbc:mysql://localhost/watcher"/>  
+        <property name="username" value="root"></property>
+        <property name="password" value=""></property>
+    </bean>
+    <bean id="msgSqlProc" class="com.codencare.watcher.esb.processor.MessageSqlProcessor" />
+    <bean id="nettySqlProc" class="com.codencare.watcher.esb.processor.AlarmSqlProcessor" />
+    <bean id="locProc" class="com.codencare.watcher.esb.processor.LocationProcessor" />
+    <bean id="deviceA" class="com.codencare.message.DeviceA" />
+    <bean id="jsonProc" class="com.codencare.watcher.esb.processor.JsonProcessor" />
+    <bean id="prasimaxProc" class="com.codencare.watcher.esb.processor.PrasimakProcessor" />
+    <bean id="metajasa01Proc" class="com.codencare.watcher.esb.processor.Metajasa01Processor" />
+    <bean id="metajasa01Strategy" class="com.codencare.watcher.esb.strategy.Metajasa01Strategy" />
+    <bean id="prasimaxStrategy" class="com.codencare.watcher.esb.strategy.PrasimaxStrategy" />
+    <bean id="locStrategy" class="com.codencare.watcher.esb.strategy.LocationStrategy" />
+    
+    <camelContext xmlns="http://camel.apache.org/schema/blueprint">
+        <route>
+            <from uri="netty:tcp://localhost:5000?sync=false&amp;backlog=128&amp;allowDefaultCodec=false&amp;textline=false&amp;delimiter=NULL" />
+             <!--<enrich uri="direct:location" strategyRef="locStrategy"/>-->
+            <transform>
+                <simple>${bodyAs(String)}</simple>
+            </transform>
+           
+            
+            <choice>
+                <!--                <when>
+                    <simple>${body.trim} regex 'INSERT INTO `device`.*'</simple>
+                    <process ref="prasimaxProc" />
+                    <to uri="jdbc:watcherDB"/>
+                </when>-->
+                <when>
+                    <simple>${body.trim} regex '[ijklIJKL]|M\d{1,4}|N\d{1,4}|O\d{1,4}|P\d{1,4}'</simple>
+                    <process ref="prasimaxProc" />
+                    <!--<enrich uri="direct:location" strategyRef="prasimaxStrategy"/>-->
+                </when>
+                <when>
+                    <simple>${body.trim} regex 'IO[^IORST]*\*|RST[^IORST]*\*'</simple>
+                    <process ref="metajasa01Proc" />
+                    <!--<enrich uri="direct:location" strategyRef="metajasa01Strategy"/>-->
+                </when>
+            </choice>
+            
+            <multicast>      
+                <to uri="direct:gui"/>
+<!--                <to uri="direct:deviceDB" />  
+                <to uri="direct:messageDB" />   -->
+                <to uri="log:com.codencare.watcher" />
+            </multicast>
+        </route>     
+        <route>
+            <from uri="direct:gui"/>
+            <transform>
+                <simple>${body.jsonMessage}</simple>
+                                <!--<simple>${body.remoteAddress.hostAddress}</simple>-->
+            </transform>
+            <to uri="log:com.codencare.watcher" /> 
+            <to uri="netty:tcp://localhost:7000?sync=false&amp;textline=true" />   
+            
+            <!--      
+            <choice>
+                <when>
+                    <simple>${body.urgent} == true</simple>
+                    <transform>
+                        <simple>${body.jsonMessage.trim}</simple>
+                    </transform>
+                    <to uri="log:com.codencare.watcher" /> 
+                    <to uri="netty:tcp://localhost:7000?sync=false&amp;textline=true" />        
+                </when>
+            </choice>
+            -->
+        </route>      
+        <route>
+            <from uri="direct:deviceDB" />
+            <transform>
+                <simple>${body.sqlUpdateDevice}</simple>
+            </transform>
+            <to uri="jdbc:watcherDB"/>
+        </route>
+        <route>
+            <from uri="direct:messageDB" />
+            <transform>
+                <simple>${body.sqlInsertMessage}</simple>
+            </transform>
+            <to uri="jdbc:watcherDB"/>
+        </route>
+        <route>
+            <from uri="direct:location"/>
+            <process ref="locProc" />
+            <to uri="jdbc:watcherDB"/>
+        </route>
+    </camelContext>
+</blueprint>
